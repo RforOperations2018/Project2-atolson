@@ -70,7 +70,7 @@ ui <- fluidPage(
                   choices = Neighborhoods,
                   multiple = TRUE,
                   selectize = TRUE,
-                  selected = c("Allentown")),
+                  selected = c("Allentown", "Arlington", "Banksville")),
       
       #Age selet
       sliderInput("AgeSelect",
@@ -124,11 +124,14 @@ ui <- fluidPage(
 server <- function(input, output, session = session) {
   # Filtered Police data
   datInput <- reactive({
-    #Building API query with date filter
-    url <- paste0("https://data.wprdc.org/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20%22e03a89dd-134a-4ee8-a2bd-62c40aeebc6f%22%20WHERE%20%22INCIDENTNEIGHBORHOOD%22%20=%20%27", input$HoodSelect, "%27")
-    url <- gsub(pattern = " ", replacement = "%20", x = url)
-    # Variables (nottetaking purposes): AGE, RACE, GENDER, ARRESTTIME, ARRESTLOCATION, OFFENSES, INCIDENTLOCATION, INCIDENTNEIGHBORHOOD
-    
+    #building an IN selector
+    hood_filter <- ifelse(length(input$HoodSelect) > 0, 
+                           paste0("%20WHERE%20%22INCIDENTNEIGHBORHOOD%22%20IN%20(%27", paste(input$HoodSelect, collapse = "%27,%27"),"%27)"),
+                                     "")
+    #Building API query with neighborhood
+    url <- paste0("https://data.wprdc.org/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20%22e03a89dd-134a-4ee8-a2bd-62c40aeebc6f%22", hood_filter)
+    #url <- gsub(pattern = " ", replacement = "%20", x = url)
+
     #load & clean data
     dat <- ckanSQL(url) 
     dat <- dat %>% mutate(GENDER = recode(GENDER, "M" = "Male", "F" = "Female"),
