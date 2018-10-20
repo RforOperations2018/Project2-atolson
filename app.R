@@ -44,7 +44,7 @@ ckanUniques <- function(id, field) {
 }
 
 Neighborhoods <- sort(ckanUniques("e03a89dd-134a-4ee8-a2bd-62c40aeebc6f", "INCIDENTNEIGHBORHOOD")$INCIDENTNEIGHBORHOOD)
-MinDate <- min()
+
 pdf(NULL)
 
 # Define UI for application
@@ -160,23 +160,14 @@ server <- function(input, output, session = session) {
     return(dat)
   })
   
-  #function for map info
-  mapInput <- reactive({
-    url <- paste0("http://pghgis-pittsburghpa.opendata.arcgis.com/datasets/dbd133a206cc4a3aa915cb28baa60fd4_0.geojson")
-    data <- ckanGeoSQL(url)
-    return(data) 
-  })
-  
   output$map <- renderLeaflet({
-    map_data <- datInput()
+    map_data = datInput() 
     
     leaflet() %>%
       setView(lng = -79.997, lat = 40.432, zoom = 12) %>%
       # Basemaps
-      addTiles(group = "OpenStreetMap.BlackAndWhite") %>%
-      # Adding polygons and markers
-      addPolygons(data = mapInput(), fill = FALSE) %>%
-      #addCircleMarkers(lng = ~Longitude, lat = ~Latitude, radius = 1.5, clusterOptions = markerClusterOptions())
+      addProviderTiles("CartoDB.DarkMatter", options = providerTileOptions(noWrap = TRUE)) %>%
+      addHeatmap(data = map_data, lng = ~X, lat = ~Y, radius = 8)
   })
     
   output$raceplot <- renderPlotly({
