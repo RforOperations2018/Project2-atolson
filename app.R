@@ -1,12 +1,17 @@
 #Author: Andrew Olson
 #R Shiny - Project 2
 
-library(shiny)
-library(reshape2)
-library(dplyr)
-library(plotly)
-library(htmltools)
-library(httr)
+require(shiny)
+require(reshape2)
+require(dplyr)
+require(plotly)
+require(htmltools)
+require(httr)
+require(rgdal)
+require(leaflet)
+require(leaflet.extras)
+require(readxl)
+require(stringr)
 
 #Building the WPRDC Get request
 ckanSQL <- function(url) {
@@ -20,21 +25,33 @@ ckanSQL <- function(url) {
   data.frame(jsonlite::fromJSON(json)$result$records)
 }
 
-#Building API query with date filter
-url <- paste0("https://data.wprdc.org/api/3/action/datastore_search_sql?sql=SELECT%20%22AGE%22%2C%20%22RACE%22%2C%20%22GENDER%22%2C%20%22ARRESTDATE%22%2C%20%22ARRESTLOCATION%22%2C%20%22OFFENSES%22%2C%20%22INCIDENTLOCATION%22%20FROM%20%22e03a89dd-134a-4ee8-a2bd-62c40aeebc6f%22%20WHERE%20%22Date%22%20%3E=%20%27", input$DateSelect[1], "%27%20AND%20%22Date%22%20%3C=%20%27", input$DateSelect[2], "%27")
-# Variables (nottetaking purposes): AGE, RACE, GENDER, ARRESTDATE, ARRESTLOCATION, OFFENSES, INCIDENTLOCATION
+#Function to load GeoJson
+ckanGeoSQL <- function(url) {
+  # Make the Request
+  r <- RETRY("GET", URLencode(url))
+  # Extract Content
+  c <- content(r, "text")
+  # Basic gsub to make NA's consistent with R
+  json <- gsub('NaN', 'NA', c, perl = TRUE)
+  # Create Dataframe
+  readOGR(json)
+}
 
-#load and clean data
-#data.load <- ckanSQL(url) %>%
-#  mutate()
+# Unique values for fields
+ckanUniques <- function(id, field) {
+  url <- paste0("https://data.wprdc.org/api/action/datastore_search_sql?sql=SELECT%20DISTINCT(%22", field, "%22)%20from%20%22", id, "%22")
+  c(ckanSQL(URLencode(url)))
+}
 
+Neighborhoods <- sort(ckanUniques("e03a89dd-134a-4ee8-a2bd-62c40aeebc6f", "INCIDENTNEIGHBORHOOD")$INCIDENTNEIGHBORHOOD)
+MinDate <- min()
 pdf(NULL)
 
 # Define UI for application
 ui <- fluidPage(
   
   # Application title
-  titlePanel(""),
+  titlePanel("Pittsburgh Police Arrests"),
   
   # Sidebar
   sidebarLayout(
@@ -43,17 +60,39 @@ ui <- fluidPage(
       #Date Selecter
       dateRangeInput("DateSelect",
                      "Date range:",
-                     start = Sys.Date()-30,
+                     start = Sys.Date()-150,
                      end = Sys.Date(),
                      format = "mm/dd/yyyy"),
       
       #Neighborhood select
-      selectInput("input1Select",
-                  "input1:",
-                  choices = ,
-                  multiple = ,
+      selectInput("HoodSelect",
+                  "Neighborhood:",
+                  choices = Neighborhoods,
+                  multiple = TRUE,
                   selectize = TRUE,
-                  selected = c()),
+                  selected = c("Allentown")),
+      
+      #Age selet
+      sliderInput("AgeSelect",
+                  "Age:",
+                  min = 14,
+                  max = 90,
+                  value = c(18, 40),
+                  step = 1),
+      
+      #Race Select
+      selectInput("RaceSelect",
+                  "Race:",
+                  choices = c("Black", "White", "Hispanic", "Asian", "American Indian", "Unknown"),
+                  multiple = TRUE,
+                  selectize = TRUE,
+                  selected = c("Black", "White")),
+      
+      #Gender Select
+      checkboxGroupInput("GenderSelect",
+                         "Gender:",
+                         choices = c("Male", "Female"),
+                         selected = c("Male", "Female")),
       
       #Reset Filters button
       actionButton("reset", "Reset Filters", icon = icon("refresh"))
@@ -61,20 +100,20 @@ ui <- fluidPage(
     ),
     mainPanel(
       tabsetPanel(
-        tabPanel("Map", 
-                 plotlyOutput("map")
+        tabPanel("Map of Incidents", 
+                 leafletOutput("map")
         ),
-        tabPanel("Plot1", 
-                 plotlyOutput("plot1")
+        tabPanel("Incidents by Race", 
+                 plotlyOutput("raceplot")
         ),
-        tabPanel("Plot2", 
-                 plotlyOutput("plot2")
+        tabPanel("Incidents by Gender", 
+                 plotlyOutput("genderplot")
         ),
-        tabPanel("Table",
+        tabPanel("Data Table",
                  DT::dataTableOutput("table"),
                  
                  #Download data button
-                 downloadButton("downloadData","label")
+                 downloadButton("downloadData","Download Datatable")
         )
       )
     )
@@ -83,43 +122,100 @@ ui <- fluidPage(
 
 # Define server logic
 server <- function(input, output, session = session) {
-  # Filtered Employment data
+  # Filtered Police data
   datInput <- reactive({
-    data <- data.load %>%
-      # Filter
-      filter()
-    return(data)
-  })
-#  output$graph <- 
+    #Building API query with date filter
+    url <- paste0("https://data.wprdc.org/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20%22e03a89dd-134a-4ee8-a2bd-62c40aeebc6f%22%20WHERE%20%22INCIDENTNEIGHBORHOOD%22%20=%20%27", input$HoodSelect, "%27")
+    url <- gsub(pattern = " ", replacement = "%20", x = url)
+    # Variables (nottetaking purposes): AGE, RACE, GENDER, ARRESTTIME, ARRESTLOCATION, OFFENSES, INCIDENTLOCATION, INCIDENTNEIGHBORHOOD
     
-  output$plot1 <- renderPlotly({
+    #load & clean data
+    dat <- ckanSQL(url) 
+    dat <- dat %>% mutate(GENDER = recode(GENDER, "M" = "Male", "F" = "Female"),
+              RACE = factor(recode(RACE, "B" = "Black",
+                                   "W" = "White",
+                                   "H" = "Hispanic",
+                                   "A" = "Asian",
+                                   "I" = "American Indian",
+                                   "U" = "Unknown",
+                                   "x" = NULL), levels = c("Black", "White", "Hispanic", "Asian", "American Indian", "Unknown")),
+              AGE = as.numeric(AGE),
+              ARRESTTIME = as.Date(ARRESTTIME, format = "%Y-%m-%d"))
+
+    #Date filter
+    dat <- dat %>%
+      filter(ARRESTTIME >= input$DateSelect[1] & ARRESTTIME <= input$DateSelect[2])
+    # Age filter
+    dat <- dat %>% 
+      filter(AGE >= input$AgeSelect[1] & AGE <= input$AgeSelect[2])
+    # Race Filter
+    if (length(input$RaceSelect) > 0 ) {
+      dat <- subset(dat, RACE %in% input$RaceSelect)
+    }
+    #Gender Filter
+    if (length(input$GenderSelect) > 0 ) {
+      dat <- subset(dat, GENDER %in% input$GenderSelect)
+    }
+
+    return(dat)
+  })
+  
+  #function for map info
+  mapInput <- reactive({
+    url <- paste0("http://pghgis-pittsburghpa.opendata.arcgis.com/datasets/dbd133a206cc4a3aa915cb28baa60fd4_0.geojson")
+    data <- ckanGeoSQL(url)
+    return(data) 
+  })
+  
+  output$map <- renderLeaflet({
+    map_data <- datInput()
+    
+    leaflet() %>%
+      setView(lng = -79.997, lat = 40.432, zoom = 12) %>%
+      # Basemaps
+      addTiles(group = "OpenStreetMap.BlackAndWhite") %>%
+      # Adding polygons and markers
+      addPolygons(data = mapInput(), fill = FALSE) %>%
+      #addCircleMarkers(lng = ~Longitude, lat = ~Latitude, radius = 1.5, clusterOptions = markerClusterOptions())
+  })
+    
+  output$raceplot <- renderPlotly({
     dat <- datInput()
     ggplotly(
-      ggplot())
+      ggplot(data = dat, aes(x = ARRESTTIME, fill = RACE)) +
+        geom_bar(position = "dodge")+
+        scale_fill_manual(values = c("darkslategray", "dodgerblue3", "gold3", "red", "chartreuse", "blueviolet", "gray")) +
+        labs(x = "Date", title = "Police Arrests by Day") +
+        guides(color = FALSE))
   })
-  output$plot2 <- renderPlotly({
-    dat <- daInput()
+  output$genderplot <- renderPlotly({
+    dat <- datInput()
     ggplotly(
-      ggplot())
+      ggplot(data = dat, aes(x = ARRESTTIME, fill = GENDER)) + 
+        geom_bar(position = position_stack(reverse = T))+
+        labs(x = "Date", title = "Police Arrests by Day") +
+        guides(color = FALSE))
   })
   output$table <- DT::renderDataTable({
-    datatable <- datInput()
-    subset()
+    subset(datInput(), select = c(AGE, RACE, GENDER, ARRESTTIME, ARRESTLOCATION, OFFENSES, INCIDENTNEIGHBORHOOD))
   })
   
   # Download data in the datatable
   output$downloadData <- downloadHandler(
     filename = function() {
-      paste("file-", Sys.Date(), ".csv", sep="")
+      paste("PitArrests-", Sys.Date(), ".csv", sep="")
     },
     content = function(file) {
-      write.csv(emInput(), file)
+      write.csv(datInput(), file)
     }
   )
   
   # Reset Filter Data
   observeEvent(input$reset, {
-    updateSelectInput(session, "InputSelect", selected = c())
+    updateSelectInput(session, "RaceSelect", selected = c("Black", "White"))
+    updateSliderInput(session, "AgeSelect", value = c(18, 40))
+    updateDateRangeInput(session, "DateSelect", start = Sys.Date()-30, end = Sys.Date())
+    updateCheckboxGroupInput(session, "GenderSelect", choices = c("Male", "Female"), selected = c("Male", "Female"))
     showNotification("You have successfully reset the filters", type = "message")
   })
 }
