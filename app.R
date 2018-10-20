@@ -70,7 +70,7 @@ ui <- fluidPage(
                   choices = Neighborhoods,
                   multiple = TRUE,
                   selectize = TRUE,
-                  selected = c("Allentown", "Arlington", "Banksville")),
+                  selected = c("Brookline", "Carrick", "Elliot", "Fineview", "Friendship")),
       
       #Age selet
       sliderInput("AgeSelect",
@@ -210,6 +210,7 @@ server <- function(input, output, session = session) {
     updateSliderInput(session, "AgeSelect", value = c(18, 40))
     updateDateRangeInput(session, "DateSelect", start = Sys.Date()-30, end = Sys.Date())
     updateCheckboxGroupInput(session, "GenderSelect", choices = c("Male", "Female"), selected = c("Male", "Female"))
+    updateSelectInput(session, "HoodSelect", selected = c("Brookline", "Carrick", "Elliot", "Fineview", "Friendship"))
     showNotification("You have successfully reset the filters", type = "message")
   })
 }
