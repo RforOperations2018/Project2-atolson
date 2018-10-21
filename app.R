@@ -130,7 +130,7 @@ server <- function(input, output, session = session) {
                                      "")
     #Building API query with neighborhood
     url <- paste0("https://data.wprdc.org/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20%22e03a89dd-134a-4ee8-a2bd-62c40aeebc6f%22", hood_filter)
-    #url <- gsub(pattern = " ", replacement = "%20", x = url)
+    #url <- gsub(pattern = " ", replacement = "%20", x = url) # Removing this broke your neighborhood filter when the neighborhood has a space in it!
 
     #load & clean data
     dat <- ckanSQL(url) 
@@ -144,7 +144,7 @@ server <- function(input, output, session = session) {
                                    "x" = NULL), levels = c("Black", "White", "Hispanic", "Asian", "American Indian", "Unknown")),
               AGE = as.numeric(AGE),
               ARRESTTIME = as.Date(ARRESTTIME, format = "%Y-%m-%d"))
-
+    # So, you know you can filter these all at once right? no need to do it separately. No worries, it still works, but its a bit redundant
     #Date filter
     dat <- dat %>%
       filter(ARRESTTIME >= input$DateSelect[1] & ARRESTTIME <= input$DateSelect[2])
@@ -171,6 +171,7 @@ server <- function(input, output, session = session) {
       # Basemaps
       addProviderTiles("CartoDB.DarkMatter", options = providerTileOptions(noWrap = TRUE)) %>%
       addHeatmap(data = map_data, lng = ~X, lat = ~Y, radius = 8)
+    # You've only got one layer!
   })
     
   output$raceplot <- renderPlotly({
