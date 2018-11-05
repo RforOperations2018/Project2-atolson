@@ -130,7 +130,7 @@ server <- function(input, output, session = session) {
                                      "")
     #Building API query with neighborhood
     url <- paste0("https://data.wprdc.org/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20%22e03a89dd-134a-4ee8-a2bd-62c40aeebc6f%22", hood_filter)
-    #url <- gsub(pattern = " ", replacement = "%20", x = url) # Removing this broke your neighborhood filter when the neighborhood has a space in it!
+    url <- gsub(pattern = " ", replacement = "%20", x = url)
 
     #load & clean data
     dat <- ckanSQL(url) 
@@ -180,7 +180,7 @@ server <- function(input, output, session = session) {
       ggplot(data = dat, aes(x = ARRESTTIME, fill = RACE)) +
         geom_bar(position = "dodge")+
         scale_fill_manual(values = c("darkslategray", "dodgerblue3", "gold3", "red", "chartreuse", "blueviolet", "gray")) +
-        labs(x = "Date", title = "Police Arrests by Day") +
+        labs(x = "Date", y = "Arrests", title = "Police Arrests by Day") +
         guides(color = FALSE))
   })
   output$genderplot <- renderPlotly({
@@ -188,7 +188,7 @@ server <- function(input, output, session = session) {
     ggplotly(
       ggplot(data = dat, aes(x = ARRESTTIME, fill = GENDER)) + 
         geom_bar(position = position_stack(reverse = T))+
-        labs(x = "Date", title = "Police Arrests by Day") +
+        labs(x = "Date", y = "Arrests", title = "Police Arrests by Day") +
         guides(color = FALSE))
   })
   output$table <- DT::renderDataTable({
